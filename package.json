@@ -1,0 +1,39 @@
+{
+  "name": "aleswap-vault",
+  "version": "1.0.0",
+  "description": "AleSwap Vault",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aleswap-finance/aleswap-vault.git"
+  },
+  "author": "Nattachai Ungsriwong",
+  "license": "MIT",
+  "homepage": "https://aleswap.finance",
+  "dependencies": {
+    "@openzeppelin/contracts": "^3.1.0",
+    "@openzeppelin/contracts-upgradeable": "^3.4.1"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "@openzeppelin/hardhat-upgrades": "^1.9.0",
+    "@types/chai": "^4.2.21",
+    "@types/mocha": "^9.0.0",
+    "@types/node": "^16.4.2",
+    "@uniswap/lib": "^1.1.1",
+    "@uniswap/v2-core": "^1.0.1",
+    "@uniswap/v2-periphery": "^1.1.0-beta.0",
+    "chai": "^4.3.4",
+    "ethereum-waffle": "^3.4.0",
+    "ethers": "^5.4.1",
+    "hardhat": "^2.4.1",
+    "hardhat-gas-reporter": "^1.0.4",
+    "ts-node": "^10.1.0",
+    "typescript": "^4.3.5"
+  }
+
+}

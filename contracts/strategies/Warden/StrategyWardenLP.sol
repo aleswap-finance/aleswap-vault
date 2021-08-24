@@ -40,7 +40,7 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
     uint256 public poolId;
 
     // Routes
-    address[] public wadToWbnbRoute = [wad, wbnb];
+    address[] public wadToWbnbRoute;
     address[] public wadToLp0Route;
     address[] public wadToLp1Route;
 
@@ -72,6 +72,8 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
 
         aleswapFeeRecipient = _aleswapFeeRecipient;
 
+        wadToWbnbRoute = [wad, wbnb];
+        
         if (lpToken0 == wbnb) {
             wadToLp0Route = [wad, wbnb];
         } else if (lpToken0 != wad) {

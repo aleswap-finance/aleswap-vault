@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.6.0;
+pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
+import "@uniswap/lib/contracts/libraries/Babylonian.sol";
 import "../../interfaces/IMasterChef.sol";
 
 contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
@@ -23,6 +24,7 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
     uint constant public WITHDRAWAL_MAX = 10000;
 
     address public keeper;
+    address public harvester;
     address public vault;
     address public aleswapFeeRecipient;  
 
@@ -46,11 +48,15 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
      * @dev Event that is fired each time someone harvests the strat.
      */
     event StratHarvest(address indexed harvester);
+    event SetAleSwapFeeRecipient(address recipient);
+    event SetHarvester(address harvester);
 
     function initialize(
         address _want,
         uint256 _poolId,
+        address _vault,
         address _keeper,
+        address _harvester,
         address _aleswapFeeRecipient        
     ) external initializer {
         __Ownable_init();
@@ -60,7 +66,9 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
         lpToken0 = IUniswapV2Pair(want).token0();
         lpToken1 = IUniswapV2Pair(want).token1();
         poolId = _poolId;
+        vault = _vault;
         keeper = _keeper;
+        harvester = _harvester;
 
         aleswapFeeRecipient = _aleswapFeeRecipient;
 
@@ -85,11 +93,10 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
         _;
     }    
 
-    // verifies that the caller is not a contract.
-    modifier onlyEOA() {
-        require(msg.sender == tx.origin, "!EOA");
+    modifier onlyHarvester() {
+        require(msg.sender == owner() || msg.sender == harvester, "!harvester");
         _;
-    }
+    }        
 
     // puts the funds to work
     function deposit() public whenNotPaused {
@@ -125,19 +132,19 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
     }
 
     // compounds earnings and charges performance fee
-    function harvest() external whenNotPaused onlyEOA {
+    function harvest(uint256 feeAmountOutMin, uint256 lpAmountOutMin) external whenNotPaused onlyHarvester {
         IMasterChef(masterchef).deposit(poolId, 0);
-        chargeFees();
-        addLiquidity();
+        chargeFees(feeAmountOutMin);
+        addLiquidity(lpAmountOutMin);
         deposit();
 
         emit StratHarvest(msg.sender);
     }
 
     // performance fees
-    function chargeFees() internal {
+    function chargeFees(uint256 feeAmountOutMin) internal {
         uint256 toWbnb = IERC20(wad).balanceOf(address(this)).mul(40).div(1000); // 4%
-        WARDEN_ROUTER.swapExactTokensForTokens(toWbnb, 0, wadToWbnbRoute, address(this), now);
+        WARDEN_ROUTER.swapExactTokensForTokens(toWbnb, feeAmountOutMin, wadToWbnbRoute, address(this), now);
 
         uint256 wbnbBal = IERC20(wbnb).balanceOf(address(this));
 
@@ -150,7 +157,7 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
     }
 
     // Adds liquidity to AMM and gets more LP tokens.
-    function addLiquidity() internal {
+    function addLiquidity(uint256 amountOutMin) internal {
         uint256 wadHalf = IERC20(wad).balanceOf(address(this)).div(2);
 
         if (lpToken0 != wad) 
@@ -161,11 +168,13 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
 
         uint256 lp0Bal = IERC20(lpToken0).balanceOf(address(this));
         uint256 lp1Bal = IERC20(lpToken1).balanceOf(address(this));
-        WARDEN_ROUTER.addLiquidity(lpToken0, lpToken1, lp0Bal, lp1Bal, 1, 1, address(this), now);
+        ( , , uint256 amount) = WARDEN_ROUTER.addLiquidity(lpToken0, lpToken1, lp0Bal, lp1Bal, 1, 1, address(this), now);
+
+        require(amount >= amountOutMin, "INSUFFICIENT_OUTPUT_AMOUNT");        
     }
 
     // calculate the total underlaying 'want' held by the strat.
-    function balanceOf() public view returns (uint256) {
+    function balanceOf() external view returns (uint256) {
         return balanceOfWant().add(balanceOfPool());
     }
 
@@ -181,7 +190,7 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
     }
 
     // pauses deposits and withdraws all funds from third party systems.
-    function panic() public onlyKeeper {
+    function panic() external onlyKeeper {
         pause();
         IMasterChef(masterchef).emergencyWithdraw(poolId);
     }
@@ -200,13 +209,15 @@ contract StrategyWardenLP is OwnableUpgradeable, PausableUpgradeable {
         deposit();
     }
 
-    function setVault(address _vault) external onlyOwner {
-        vault = _vault;
-    }
-
     function setaleswapFeeRecipient(address _aleswapFeeRecipient) external onlyOwner {
         aleswapFeeRecipient = _aleswapFeeRecipient;
+        emit SetAleSwapFeeRecipient(_aleswapFeeRecipient);
     }    
+
+    function setHarvester(address _harvester) external onlyOwner {
+        harvester = _harvester;
+        emit SetHarvester(harvester);
+    }        
 
     function _giveAllowances() internal {
         IERC20(want).safeApprove(masterchef, uint256(-1));

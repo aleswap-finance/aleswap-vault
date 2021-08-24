@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.6.0;
+pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -18,6 +18,8 @@ contract AleVault is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
     IVaultStrategy public strategy;
     ISwapper public swapper;
+
+    event InCaseTokensGetStuck(address _token);
 
     function initialize (
         IVaultStrategy _strategy,
@@ -47,7 +49,7 @@ contract AleVault is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      * @dev Function for various UIs to display the current value of one of our yield tokens.
      * Returns an uint256 with 18 decimals of how much underlying asset one vault share represents.
      */
-    function getPricePerFullShare() public view returns (uint256) {
+    function getPricePerFullShare() external view returns (uint256) {
         return totalSupply() == 0 ? 1e18 : balance().mul(1e18).div(totalSupply());
     }
 
@@ -67,9 +69,8 @@ contract AleVault is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         _depositAndMintVaultToken(_amount);
     }
 
-    function depositFromNative(uint256 _minAmount) public payable nonReentrant {
-        uint _amount = swapper.swapNativeToLp{value: msg.value}(address(want()),address(this));
-        require(_amount >= _minAmount, "INSUFFICIENT_OUTPUT_AMOUNT");
+    function depositFromNative(uint256 _minAmount) external payable nonReentrant {
+        uint _amount = swapper.swapNativeToLp{value: msg.value}(address(want()), _minAmount, address(this));
 
         _depositAndMintVaultToken(_amount);  
     }
@@ -79,13 +80,12 @@ contract AleVault is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         IERC20(_token).safeTransferFrom(msg.sender, address(this), _tokenAmount);
 
         IERC20(_token).safeApprove(address(swapper),_tokenAmount);
-        uint _amount = swapper.swapTokenToLP(_token,_tokenAmount, address(want()), address(this));
-        require(_amount >= _minAmount, "INSUFFICIENT_OUTPUT_AMOUNT");
+        uint _amount = swapper.swapTokenToLP(_token,_tokenAmount, address(want()), _minAmount, address(this));
 
         _depositAndMintVaultToken(_amount);    
     }
 
-    function depositAllFromToken(address _token,uint256 _minAmount) public {
+    function depositAllFromToken(address _token,uint256 _minAmount) external {
         depositFromToken(_token, IERC20(_token).balanceOf(msg.sender), _minAmount);
     }    
 
@@ -129,19 +129,17 @@ contract AleVault is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
     function withdrawToNative(uint256 _shares,uint256 _minAmount) public nonReentrant {
         uint256 _amount = _withdraw(_shares);
-        uint256 _nativeAmount = swapper.swapLpToNative(address(want()),_amount,address(this));
+        uint256 _nativeAmount = swapper.swapLpToNative(address(want()), _amount, _minAmount, address(this));
 
-        require(_nativeAmount >= _minAmount, "INSUFFICIENT_OUTPUT_AMOUNT");
         payable(msg.sender).sendValue(_nativeAmount);
     }
 
     function withdrawToToken(uint256 _shares, address _token, uint256 _minAmount) public {
-        require(_token !=  address(want()), "use withdraw!");
+        require(_token != address(want()), "use withdraw!");
         
         uint256 _amount = _withdraw(_shares);
-        uint256 _tokenAmount = swapper.swapLpToToken(address(want()), _amount, _token, address(this));
+        uint256 _tokenAmount = swapper.swapLpToToken(address(want()), _amount, _token, _minAmount, address(this));
 
-        require(_tokenAmount >= _minAmount, "INSUFFICIENT_OUTPUT_AMOUNT");
         IERC20(_token).safeTransfer(msg.sender, _tokenAmount);
     }
 
@@ -162,5 +160,6 @@ contract AleVault is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
         uint256 amount = IERC20(_token).balanceOf(address(this));
         IERC20(_token).safeTransfer(msg.sender, amount);
+        emit InCaseTokensGetStuck(_token);
     }
 }

@@ -8,6 +8,7 @@ import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
 import "@uniswap/lib/contracts/libraries/Babylonian.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IWETH.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "../../libraries/UnwrapBNB.sol";
 
 contract WardenSwapper is OwnableUpgradeable {
     using SafeMath for uint;
@@ -20,6 +21,7 @@ contract WardenSwapper is OwnableUpgradeable {
     IUniswapV2Router02 private constant WARDEN_ROUTER = IUniswapV2Router02(0x71ac17934b60A4610dc58b715B61e45DCBdE4054);
     IUniswapV2Router02 private constant ALE_ROUTER = IUniswapV2Router02(0xBfBCc27fC5eA4c1D7538e3e076c79A631Eb2beA6);
 
+    UnwrapBNB private constant UNWRAPBNB = UnwrapBNB(0x16EC1216104e1c560F3eC916c71c1657Dca96234);
 
     function initialize() external initializer {
         __Ownable_init();
@@ -50,6 +52,8 @@ contract WardenSwapper is OwnableUpgradeable {
                 token1Amount = _swap(token1,token1Amount,_to,address(this));
             }
             amount = token0Amount.add(token1Amount);
+
+            require(amount >= _amountOutMin, "INSUFFICIENT_OUTPUT_AMOUNT");
             IERC20(_to).safeTransfer(_recipient, amount);
             return amount;
         } else {
@@ -73,9 +77,8 @@ contract WardenSwapper is OwnableUpgradeable {
     }
 
     function swapLpToNative(address _from, uint amount, uint _amountOutMin, address _recipient) external returns (uint) {
-        amount = swapLpToToken(_from, amount, WBNB, _amountOutMin, address(this));
-        IWETH(WBNB).withdraw(amount);
-        TransferHelper.safeTransferETH(_recipient, amount);        
+        amount = swapLpToToken(_from, amount, WBNB, _amountOutMin, address(UNWRAPBNB));
+        UNWRAPBNB.unwrap(amount, _recipient);       
 
         return amount;
     }
